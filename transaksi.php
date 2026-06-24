@@ -23,7 +23,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['aksi'] ?? '') === 'simpan'
     $total = 0;
     foreach ($items as $it) $total += $it['jumlah'] * $it['harga'];
 
-    // Pembayaran non-tunai (transfer/QRIS/e-wallet/kartu) selalu dianggap pas sesuai total
+    // Pembayaran non-tunai selalu dianggap pas sesuai total
     if ($metodeBayar !== 'tunai') {
         $bayar = $total;
     }
@@ -46,13 +46,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['aksi'] ?? '') === 'simpan'
             $idPrd = (int)   $it['id'];
             $jml   = (int)   $it['jumlah'];
             $harga = (float) $it['harga'];
+
             // Cek stok
             $stokNow = (int) $db->query("SELECT stok FROM produk WHERE id_produk=$idPrd")->fetch_assoc()['stok'];
             if ($stokNow < $jml) throw new Exception("Stok '{$it['nama']}' tidak cukup (tersisa $stokNow).");
+
+            // Simpan detail transaksi
             $sd->bind_param('iiid', $idTrx, $idPrd, $jml, $harga);
             $sd->execute();
+
+            // ✅ KURANGI STOK SECARA MANUAL
+            $db->query("UPDATE produk SET stok = stok - $jml WHERE id_produk = $idPrd");
         }
-        // Update total (trigger sudah kurangi stok)
+
+        // Update total
         $db->query("UPDATE transaksi SET total_harga=$total WHERE id_transaksi=$idTrx");
         $db->commit();
         $_SESSION['flash'] = ['type'=>'success','msg'=>"Transaksi $kode berhasil disimpan. Kembalian: " . rupiah($bayar - $total)];
@@ -64,11 +71,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['aksi'] ?? '') === 'simpan'
     header('Location: transaksi.php'); exit;
 }
 
-// ── BATALKAN
+// ── BATALKAN TRANSAKSI (stok dikembalikan)
 if (isset($_GET['batal'])) {
     $id = (int) $_GET['batal'];
-    $db->query("UPDATE transaksi SET status='batal' WHERE id_transaksi=$id");
-    $_SESSION['flash'] = ['type'=>'success','msg'=>'Transaksi berhasil dibatalkan.'];
+
+    // Ambil detail transaksi untuk kembalikan stok
+    $details = $db->query("SELECT id_produk, jumlah FROM detail_transaksi WHERE id_transaksi=$id");
+
+    $db->begin_transaction();
+    try {
+        while ($d = $details->fetch_assoc()) {
+            // ✅ KEMBALIKAN STOK SAAT BATAL
+            $db->query("UPDATE produk SET stok = stok + {$d['jumlah']} WHERE id_produk = {$d['id_produk']}");
+        }
+        $db->query("UPDATE transaksi SET status='batal' WHERE id_transaksi=$id");
+        $db->commit();
+        $_SESSION['flash'] = ['type'=>'success','msg'=>'Transaksi berhasil dibatalkan dan stok telah dikembalikan.'];
+    } catch (Exception $e) {
+        $db->rollback();
+        $_SESSION['flash'] = ['type'=>'error','msg'=>'Gagal membatalkan: ' . $e->getMessage()];
+    }
     header('Location: transaksi.php'); exit;
 }
 
@@ -157,7 +179,7 @@ require_once 'includes/header.php';
             <?php if ($row['status']==='selesai'): ?>
             <a href="transaksi.php?batal=<?= $row['id_transaksi'] ?>"
                class="btn btn-danger btn-xs"
-               data-confirm="Batalkan transaksi ini? Stok akan dikembalikan.">Batal</a>
+               onclick="return confirm('Batalkan transaksi ini? Stok akan dikembalikan.')">Batal</a>
             <?php endif; ?>
           </td>
         </tr>
@@ -272,13 +294,13 @@ require_once 'includes/header.php';
           Kembalian: <strong id="kembalianVal"></strong>
         </div>
 
-        <!-- Panel: NON-TUNAI (QRIS / Transfer / E-Wallet / Kartu) -->
+        <!-- Panel: NON-TUNAI -->
         <div id="panelNonTunai" style="display:none">
 
           <!-- QRIS -->
           <div id="boxQris" class="metode-info-box" style="display:none">
             <div style="display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center">
-              <img src="assets/qris-contoh.png" alt="Kode QRIS <?= clean(namaWarung()) ?>" id="imgQris"
+              <img src="assets/qris-contoh.png" alt="Kode QRIS" id="imgQris"
                    style="width:180px;height:auto;border-radius:12px;border:1px solid var(--border);box-shadow:var(--shadow)"
                    onerror="this.onerror=null;this.replaceWith(qrisFallback());">
               <div style="font-size:12.5px;color:var(--ink-2);line-height:1.7">
@@ -294,9 +316,9 @@ require_once 'includes/header.php';
             <div style="font-size:12.5px;color:var(--ink-2);line-height:2">
               Transfer ke salah satu rekening berikut, lalu masukkan nomor referensi / 4 digit terakhir di bawah:
               <div style="margin-top:6px;display:flex;flex-direction:column;gap:4px">
-                <div><span class="badge badge-blue">BCA</span> 123-456-7890 a.n <?= clean(namaWarung()) ?></div>
-                <div><span class="badge badge-blue">BNI</span> 098-765-4321 a.n <?= clean(namaWarung()) ?></div>
-                <div><span class="badge badge-blue">Mandiri</span> 111-222-3333 a.n <?= clean(namaWarung()) ?></div>
+                <div><span class="badge badge-blue">BCA</span> 123-456-7890 a.n Warung Sarifah</div>
+                <div><span class="badge badge-blue">BNI</span> 098-765-4321 a.n Warung Sarifah</div>
+                <div><span class="badge badge-blue">Mandiri</span> 111-222-3333 a.n Warung Sarifah</div>
               </div>
             </div>
           </div>
@@ -403,7 +425,9 @@ function tambahItem() {
     if (jml > stok) return alert(`Stok tidak cukup (tersisa ${stok}).`);
     const idx = keranjang.findIndex(k => k.id === id);
     if (idx >= 0) {
-        keranjang[idx].jumlah = Math.min(keranjang[idx].jumlah + jml, stok);
+        const totalBaru = keranjang[idx].jumlah + jml;
+        if (totalBaru > stok) return alert(`Stok tidak cukup (tersisa ${stok}).`);
+        keranjang[idx].jumlah = totalBaru;
     } else {
         keranjang.push({ id, nama, harga, jumlah: jml, stok });
     }
@@ -428,8 +452,12 @@ function hitungKembalian() {
     const box    = document.getElementById('kembalianBox');
     if (metodeAktif === 'tunai' && bayar > 0) {
         box.style.display = 'block';
-        document.getElementById('kembalianVal').textContent = formatRp(bayar - total);
-    } else { box.style.display = 'none'; }
+        const kembalian = bayar - total;
+        document.getElementById('kembalianVal').textContent = formatRp(kembalian);
+        document.getElementById('kembalianVal').style.color = kembalian < 0 ? 'red' : 'inherit';
+    } else {
+        box.style.display = 'none';
+    }
 }
 
 document.getElementById('inputBayar').addEventListener('input', hitungKembalian);
@@ -458,7 +486,13 @@ function pilihMetode(m) {
 
     if (!isTunai) {
         ['boxQris','boxTransfer','boxEwallet','boxKartu'].forEach(id => document.getElementById(id).style.display = 'none');
-        const boxMap = { qris: 'boxQris', transfer_bank: 'boxTransfer', e_wallet: 'boxEwallet', kartu_debit: 'boxKartu', kartu_kredit: 'boxKartu' };
+        const boxMap = {
+            qris: 'boxQris',
+            transfer_bank: 'boxTransfer',
+            e_wallet: 'boxEwallet',
+            kartu_debit: 'boxKartu',
+            kartu_kredit: 'boxKartu'
+        };
         document.getElementById(boxMap[m]).style.display = 'block';
         document.getElementById('labelRefBayar').textContent = refLabels[m] || 'No. Referensi (opsional)';
         document.getElementById('totalNonTunaiDisplay').textContent = formatRp(hitungTotal());
@@ -467,9 +501,10 @@ function pilihMetode(m) {
 }
 
 function submitTrx() {
-    if (keranjang.length === 0) return alert('Keranjang kosong!');
+    if (keranjang.length === 0) return alert('Keranjang kosong! Tambahkan produk dulu.');
     if (metodeAktif === 'tunai') {
         const bayar = parseFloat(document.getElementById('inputBayar').value) || 0;
+        if (bayar <= 0) return alert('Masukkan jumlah uang bayar.');
         if (bayar < hitungTotal()) return alert('Uang bayar kurang dari total harga.');
     }
     document.getElementById('itemsJson').value = JSON.stringify(keranjang);
