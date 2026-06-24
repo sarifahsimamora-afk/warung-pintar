@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WarungKu — Sistem Manajemen Toko</title>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-brand">
+    <div class="brand-icon">🛒</div>
+    <div>
+      <div class="brand-name">WarungKu</div>
+      <div class="brand-sub">Manajemen Toko</div>
+    </div>
+  </div>
+  <nav class="sidebar-nav">
+    <button class="nav-item active" data-page="dashboard">
+      <span class="nav-icon">📊</span> Dashboard
+    </button>
+    <button class="nav-item" data-page="produk">
+      <span class="nav-icon">📦</span> Produk
+    </button>
+    <button class="nav-item" data-page="kasir">
+      <span class="nav-icon">🧾</span> Kasir
+    </button>
+    <button class="nav-item" data-page="transaksi">
+      <span class="nav-icon">📋</span> Riwayat
+    </button>
+    <button class="nav-item" data-page="laporan">
+      <span class="nav-icon">📈</span> Laporan
+    </button>
+  </nav>
+  <div class="sidebar-footer">
+    <div class="sidebar-date" id="sidebarDate"></div>
+  </div>
+</aside>
+
+<!-- MAIN -->
+<main class="main">
+
+  <!-- TOPBAR -->
+  <header class="topbar">
+    <div class="topbar-title" id="topbarTitle">Dashboard</div>
+    <div class="topbar-right">
+      <div class="badge-stok" id="badgeStok"></div>
+      <div class="topbar-user">👤 Admin Warung</div>
+    </div>
+  </header>
+
+  <!-- PAGE: DASHBOARD -->
+  <div class="page active" id="page-dashboard">
+    <div class="stat-grid">
+      <div class="stat-card primary">
+        <div class="stat-icon">💰</div>
+        <div class="stat-value" id="statPendapatan">Rp 0</div>
+        <div class="stat-label">Pendapatan Hari Ini</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">🧾</div>
+        <div class="stat-value" id="statTransaksi">0</div>
+        <div class="stat-label">Transaksi Hari Ini</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">📦</div>
+        <div class="stat-value" id="statProduk">0</div>
+        <div class="stat-label">Total Produk</div>
+      </div>
+      <div class="stat-card warn">
+        <div class="stat-icon">⚠️</div>
+        <div class="stat-value" id="statStokMenipis">0</div>
+        <div class="stat-label">Stok Menipis</div>
+      </div>
+    </div>
+
+    <div class="dashboard-grid">
+      <div class="card">
+        <div class="card-head">
+          <span class="card-title">Transaksi Terbaru</span>
+        </div>
+        <div id="recentTrx" class="recent-list"></div>
+      </div>
+      <div class="card">
+        <div class="card-head">
+          <span class="card-title">Stok Menipis (≤5)</span>
+        </div>
+        <div id="lowStockList" class="recent-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PAGE: PRODUK -->
+  <div class="page" id="page-produk">
+    <div class="page-toolbar">
+      <input class="search-input" type="text" id="searchProduk" placeholder="🔍 Cari produk...">
+      <select class="filter-select" id="filterKategori">
+        <option value="">Semua Kategori</option>
+        <option>Makanan</option>
+        <option>Minuman</option>
+        <option>Snack</option>
+        <option>Rokok</option>
+        <option>Sembako</option>
+        <option>Lainnya</option>
+      </select>
+      <button class="btn btn-primary" id="btnTambahProduk">+ Tambah Produk</button>
+    </div>
+    <div class="card">
+      <table class="data-table" id="tableProduk">
+        <thead>
+          <tr>
+            <th>Nama Produk</th>
+            <th>Kategori</th>
+            <th>Harga</th>
+            <th>Stok</th>
+            <th>Aksi</th>
+          </tr>
+        </thead>
+        <tbody id="tbodyProduk"></tbody>
+      </table>
+      <div id="emptyProduk" class="empty-state" style="display:none">
+        <div class="empty-icon">📦</div>
+        <div class="empty-text">Belum ada produk. Tambahkan produk pertama!</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PAGE: KASIR -->
+  <div class="page" id="page-kasir">
+    <div class="kasir-layout">
+      <!-- Kiri: daftar produk -->
+      <div class="kasir-left">
+        <input class="search-input" type="text" id="searchKasir" placeholder="🔍 Cari produk...">
+        <div class="kasir-produk-grid" id="kasirProdukGrid"></div>
+      </div>
+      <!-- Kanan: keranjang -->
+      <div class="kasir-right">
+        <div class="kasir-title">🧾 Keranjang Belanja</div>
+        <div id="keranjangList" class="keranjang-list"></div>
+        <div id="keranjangEmpty" class="empty-state small">
+          <div class="empty-icon">🛒</div>
+          <div class="empty-text">Keranjang kosong</div>
+        </div>
+        <div class="kasir-total-area">
+          <div class="total-row"><span>Subtotal</span><span id="kasirSubtotal">Rp 0</span></div>
+          <div class="total-row big"><span>Total</span><span id="kasirTotal">Rp 0</span></div>
+          <div class="bayar-area">
+            <label>Bayar</label>
+            <input class="bayar-input" type="number" id="inputBayar" placeholder="Masukkan nominal..." min="0">
+            <div class="kembalian-row" id="kembalianRow" style="display:none">
+              <span>Kembalian</span><span id="kasirKembalian" class="kembalian-val">Rp 0</span>
+            </div>
+          </div>
+          <button class="btn btn-primary btn-block" id="btnBayar">✅ Proses Transaksi</button>
+          <button class="btn btn-outline btn-block" id="btnResetKeranjang">🗑 Kosongkan</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PAGE: RIWAYAT TRANSAKSI -->
+  <div class="page" id="page-transaksi">
+    <div class="page-toolbar">
+      <input type="date" class="filter-select" id="filterTanggal">
+      <button class="btn btn-outline" id="btnFilterTanggal">Filter</button>
+      <button class="btn btn-outline" id="btnTampilSemua">Semua</button>
+    </div>
+    <div class="card">
+      <table class="data-table" id="tableTrx">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Tanggal & Jam</th>
+            <th>Produk</th>
+            <th>Total</th>
+            <th>Bayar</th>
+            <th>Kembalian</th>
+            <th>Aksi</th>
+          </tr>
+        </thead>
+        <tbody id="tbodyTrx"></tbody>
+      </table>
+      <div id="emptyTrx" class="empty-state" style="display:none">
+        <div class="empty-icon">📋</div>
+        <div class="empty-text">Belum ada transaksi</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PAGE: LAPORAN -->
+  <div class="page" id="page-laporan">
+    <div class="laporan-filter card" style="padding:16px;margin-bottom:20px;">
+      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+        <label style="font-weight:600;">Periode:</label>
+        <select class="filter-select" id="laporanPeriode">
+          <option value="hari">Hari Ini</option>
+          <option value="minggu">7 Hari Terakhir</option>
+          <option value="bulan" selected>Bulan Ini</option>
+          <option value="semua">Semua Waktu</option>
+        </select>
+        <button class="btn btn-primary" id="btnGenerateLaporan">Generate</button>
+      </div>
+    </div>
+    <div class="stat-grid">
+      <div class="stat-card primary">
+        <div class="stat-icon">💰</div>
+        <div class="stat-value" id="lapPendapatan">Rp 0</div>
+        <div class="stat-label">Total Pendapatan</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">🧾</div>
+        <div class="stat-value" id="lapTransaksi">0</div>
+        <div class="stat-label">Total Transaksi</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">🛍</div>
+        <div class="stat-value" id="lapItemTerjual">0</div>
+        <div class="stat-label">Item Terjual</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">📊</div>
+        <div class="stat-value" id="lapRataRata">Rp 0</div>
+        <div class="stat-label">Rata-rata per Transaksi</div>
+      </div>
+    </div>
+    <div class="dashboard-grid">
+      <div class="card">
+        <div class="card-head"><span class="card-title">Produk Terlaris</span></div>
+        <div id="lapProdukTerlaris" class="recent-list"></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><span class="card-title">Pendapatan per Hari</span></div>
+        <div id="lapPerHari" class="recent-list"></div>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<!-- MODAL PRODUK -->
+<div class="modal-overlay" id="modalProduk">
+  <div class="modal">
+    <div class="modal-head">
+      <span id="modalProdukTitle">Tambah Produk</span>
+      <button class="modal-close" id="closeModalProduk">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="editProdukId">
+      <div class="form-group">
+        <label>Nama Produk *</label>
+        <input class="form-input" type="text" id="inputNamaProduk" placeholder="Contoh: Indomie Goreng">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Kategori *</label>
+          <select class="form-input" id="inputKategori">
+            <option>Makanan</option>
+            <option>Minuman</option>
+            <option>Snack</option>
+            <option>Rokok</option>
+            <option>Sembako</option>
+            <option>Lainnya</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Stok *</label>
+          <input class="form-input" type="number" id="inputStok" min="0" placeholder="0">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Harga Jual (Rp) *</label>
+        <input class="form-input" type="number" id="inputHarga" min="0" placeholder="5000">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" id="cancelModalProduk">Batal</button>
+      <button class="btn btn-primary" id="simpanProduk">Simpan</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL DETAIL TRANSAKSI -->
+<div class="modal-overlay" id="modalDetailTrx">
+  <div class="modal">
+    <div class="modal-head">
+      <span>Detail Transaksi</span>
+      <button class="modal-close" id="closeModalTrx">✕</button>
+    </div>
+    <div class="modal-body" id="detailTrxContent"></div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" id="closeDetailTrx">Tutup</button>
+    </div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div id="toast" class="toast"></div>
+
+<script src="script.js"></script>
+</body>
+</html>
