@@ -193,33 +193,8 @@ BEGIN
 END$$
 DELIMITER ;
 
--- ============================================================
--- TRIGGER: kurangi stok otomatis saat detail_transaksi diinsert
--- ============================================================
-DELIMITER $$
-CREATE TRIGGER trg_kurangi_stok
-AFTER INSERT ON detail_transaksi
-FOR EACH ROW
-BEGIN
-    UPDATE produk
-    SET stok = stok - NEW.jumlah
-    WHERE id_produk = NEW.id_produk;
-END$$
-DELIMITER ;
+-- TRIGGER trg_kurangi_stok DIHAPUS
+-- Pengurangan stok ditangani langsung di transaksi.php (PHP manual)
 
--- ============================================================
--- TRIGGER: kembalikan stok jika transaksi dibatalkan
--- ============================================================
-DELIMITER $$
-CREATE TRIGGER trg_batal_transaksi
-AFTER UPDATE ON transaksi
-FOR EACH ROW
-BEGIN
-    IF NEW.status = 'batal' AND OLD.status != 'batal' THEN
-        UPDATE produk p
-        JOIN detail_transaksi dt ON p.id_produk = dt.id_produk
-        SET p.stok = p.stok + dt.jumlah
-        WHERE dt.id_transaksi = NEW.id_transaksi;
-    END IF;
-END$$
-DELIMITER ;
+-- TRIGGER trg_batal_transaksi DIHAPUS
+-- Pengembalian stok saat batal ditangani langsung di transaksi.php (PHP manual)
