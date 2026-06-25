@@ -47,19 +47,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['aksi'] ?? '') === 'simpan'
             $jml   = (int)   $it['jumlah'];
             $harga = (float) $it['harga'];
 
-            // Cek stok
-            $stokNow = (int) $db->query("SELECT stok FROM produk WHERE id_produk=$idPrd")->fetch_assoc()['stok'];
-            if ($stokNow < $jml) throw new Exception("Stok '{$it['nama']}' tidak cukup (tersisa $stokNow).");
+            // ✅ Cek stok SEBELUM insert — tolak & rollback jika tidak cukup
+            $rowStok = $db->query("SELECT stok, nama_produk FROM produk WHERE id_produk=$idPrd FOR UPDATE")->fetch_assoc();
+            $stokNow = (int) $rowStok['stok'];
+            $namaPrd = $rowStok['nama_produk'];
+            if ($stokNow < $jml) {
+                throw new Exception(
+                    "⚠️ PESANAN DIBATALKAN — Produk \"$namaPrd\" hanya tersisa $stokNow unit, sedangkan dipesan $jml unit. " .
+                    "Kurangi jumlah atau hapus produk dari keranjang."
+                );
+            }
 
             // Simpan detail transaksi
             $sd->bind_param('iiid', $idTrx, $idPrd, $jml, $harga);
             $sd->execute();
 
-            // ✅ KURANGI STOK SECARA MANUAL
+            // Kurangi stok manual (tidak pakai trigger)
             $db->query("UPDATE produk SET stok = stok - $jml WHERE id_produk = $idPrd");
         }
 
-        // Update total
+        // Update total harga final
         $db->query("UPDATE transaksi SET total_harga=$total WHERE id_transaksi=$idTrx");
         $db->commit();
         $_SESSION['flash'] = ['type'=>'success','msg'=>"Transaksi $kode berhasil disimpan. Kembalian: " . rupiah($bayar - $total)];
@@ -71,22 +78,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['aksi'] ?? '') === 'simpan'
     header('Location: transaksi.php'); exit;
 }
 
-// ── BATALKAN TRANSAKSI (stok dikembalikan)
+// ── BATALKAN TRANSAKSI
+// Stok dikembalikan manual (tidak pakai trigger)
 if (isset($_GET['batal'])) {
-    $id = (int) $_GET['batal'];
-
-    // Ambil detail transaksi untuk kembalikan stok
-    $details = $db->query("SELECT id_produk, jumlah FROM detail_transaksi WHERE id_transaksi=$id");
-
+    $id  = (int) $_GET['batal'];
+    $cek = $db->query("SELECT status FROM transaksi WHERE id_transaksi=$id")->fetch_assoc();
+    if (!$cek || $cek['status'] === 'batal') {
+        $_SESSION['flash'] = ['type'=>'error','msg'=>'Transaksi tidak ditemukan atau sudah dibatalkan.'];
+        header('Location: transaksi.php'); exit;
+    }
     $db->begin_transaction();
     try {
+        // Kembalikan stok semua item di transaksi ini
+        $details = $db->query("SELECT id_produk, jumlah FROM detail_transaksi WHERE id_transaksi=$id");
         while ($d = $details->fetch_assoc()) {
-            // ✅ KEMBALIKAN STOK SAAT BATAL
             $db->query("UPDATE produk SET stok = stok + {$d['jumlah']} WHERE id_produk = {$d['id_produk']}");
         }
         $db->query("UPDATE transaksi SET status='batal' WHERE id_transaksi=$id");
         $db->commit();
-        $_SESSION['flash'] = ['type'=>'success','msg'=>'Transaksi berhasil dibatalkan dan stok telah dikembalikan.'];
+        $_SESSION['flash'] = ['type'=>'success','msg'=>'Transaksi berhasil dibatalkan. Stok produk telah dikembalikan.'];
     } catch (Exception $e) {
         $db->rollback();
         $_SESSION['flash'] = ['type'=>'error','msg'=>'Gagal membatalkan: ' . $e->getMessage()];
@@ -368,6 +378,36 @@ require_once 'includes/header.php';
   </div>
 </div>
 
+<!-- MODAL PEMBATALAN STOK -->
+<div id="modalBatalStok" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:9999;align-items:center;justify-content:center;">
+  <div style="background:#fff;border-radius:16px;max-width:420px;width:90%;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,0.25);">
+    <div style="background:#dc2626;padding:20px 24px;display:flex;align-items:center;gap:12px;">
+      <div style="font-size:32px">🚫</div>
+      <div>
+        <div style="color:#fff;font-weight:700;font-size:16px">Pesanan Dibatalkan</div>
+        <div style="color:#fca5a5;font-size:12px">Stok tidak mencukupi permintaan</div>
+      </div>
+    </div>
+    <div style="padding:20px 24px;">
+      <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:14px 16px;margin-bottom:14px;font-size:13.5px;line-height:2;color:#7f1d1d;">
+        <div>📦 <strong>Produk:</strong> <span id="batalStokNama"></span></div>
+        <div>🛒 <strong>Jumlah dipesan:</strong> <span id="batalStokDipesan"></span></div>
+        <div>⚠️ <strong>Stok tersedia:</strong> <span id="batalStokSisa" style="color:#dc2626;font-weight:700"></span></div>
+      </div>
+      <div style="font-size:13px;color:#6b7280;">
+        Silakan ubah jumlah menjadi maksimal <strong><span id="batalStokSaran"></span></strong> unit,
+        atau hapus produk ini dari keranjang.
+      </div>
+    </div>
+    <div style="padding:0 24px 20px;display:flex;justify-content:flex-end;">
+      <button onclick="tutupModalBatalStok()"
+        style="background:#dc2626;color:#fff;border:none;border-radius:8px;padding:10px 22px;font-weight:700;font-size:13px;cursor:pointer;">
+        Kembali ke Keranjang
+      </button>
+    </div>
+  </div>
+</div>
+
 <script>
 let keranjang = [];
 let metodeAktif = 'tunai';
@@ -413,6 +453,18 @@ function renderKeranjang() {
     hitungKembalian();
 }
 
+// ── Modal popup saat stok melebihi yang tersedia
+function tampilModalBatalStok(nama, dipesan, tersedia) {
+    document.getElementById('batalStokNama').textContent    = nama;
+    document.getElementById('batalStokDipesan').textContent = dipesan;
+    document.getElementById('batalStokSisa').textContent   = tersedia;
+    document.getElementById('batalStokSaran').textContent  = tersedia;
+    document.getElementById('modalBatalStok').style.display = 'flex';
+}
+function tutupModalBatalStok() {
+    document.getElementById('modalBatalStok').style.display = 'none';
+}
+
 function tambahItem() {
     const sel = document.getElementById('pilihProduk');
     const opt = sel.options[sel.selectedIndex];
@@ -422,11 +474,14 @@ function tambahItem() {
     const nama  = opt.dataset.nama;
     const harga = parseFloat(opt.dataset.harga);
     const stok  = parseInt(opt.dataset.stok);
-    if (jml > stok) return alert(`Stok tidak cukup (tersisa ${stok}).`);
+
+    // Cek stok — tampil modal jika melebihi
+    if (jml > stok) return tampilModalBatalStok(nama, jml, stok);
+
     const idx = keranjang.findIndex(k => k.id === id);
     if (idx >= 0) {
         const totalBaru = keranjang[idx].jumlah + jml;
-        if (totalBaru > stok) return alert(`Stok tidak cukup (tersisa ${stok}).`);
+        if (totalBaru > stok) return tampilModalBatalStok(nama, totalBaru, stok);
         keranjang[idx].jumlah = totalBaru;
     } else {
         keranjang.push({ id, nama, harga, jumlah: jml, stok });
@@ -437,7 +492,15 @@ function tambahItem() {
 }
 
 function ubahJumlah(i, val) {
-    keranjang[i].jumlah = Math.max(1, Math.min(parseInt(val), keranjang[i].stok));
+    const jml  = parseInt(val);
+    const item = keranjang[i];
+    if (jml > item.stok) {
+        tampilModalBatalStok(item.nama, jml, item.stok);
+        keranjang[i].jumlah = item.stok; // reset ke maksimal
+        setTimeout(() => renderKeranjang(), 50);
+        return;
+    }
+    keranjang[i].jumlah = Math.max(1, jml);
     renderKeranjang();
 }
 
