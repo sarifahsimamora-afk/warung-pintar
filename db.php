@@ -1,7 +1,7 @@
 <?php
 define('DB_HOST', 'sql304.infinityfree.com');
 define('DB_USER', 'if0_42259461');
-define('DB_PASS', 'LMLNuPCW6Y');  // password saat daftar tadi
+define('DB_PASS', 'isi sendiri');  // password saat daftar tadi
 define('DB_NAME', 'if0_42259461_warung');
 
 function getDB(): mysqli {
